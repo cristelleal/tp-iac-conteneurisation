@@ -1,0 +1,20 @@
+# Ingress pour la version dev — accessible sur dev.gestion-produits.local
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: php-ingress
+  namespace: dev
+  annotations:
+    kubernetes.io/ingress.class: "public"
+spec:
+  rules:
+    - host: dev.gestion-produits.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: php-service
+                port:
+                  number: 80

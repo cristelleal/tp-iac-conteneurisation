@@ -1,0 +1,47 @@
+# ConfigMap : contient le script SQL d'initialisation de la base de données
+# MySQL exécute automatiquement les fichiers dans /docker-entrypoint-initdb.d/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-init-script
+  namespace: prod
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS gestion_produits CHARACTER SET utf8mb3;
+    USE gestion_produits;
+
+    CREATE TABLE IF NOT EXISTS produits (
+      PRO_id int NOT NULL AUTO_INCREMENT,
+      PRO_lib varchar(200) NOT NULL,
+      PRO_prix decimal(10,2) NOT NULL,
+      PRO_description text,
+      PRIMARY KEY (PRO_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+    INSERT IGNORE INTO produits VALUES
+    (1,'Pédales Shimano XT M8040 M/L',74.99,'Les pédales plates SHIMANO XT PD-M8040.'),
+    (2,'Selle FIZIK ARIONE VERSUS Rails Kium',59.99,'Modèle confortable.'),
+    (3,'Chaussures VTT MAVIC CROSSMAX SL PRO THERMO Noir',164.99,'Chaussures hiver.'),
+    (4,'Pack GPS GARMIN EDGE 1030 + Ceinture Cardio',519.99,'GPS vélo complet.'),
+    (5,'Fourche DVO SAPPHIRE 29',549.99,'Fourche Trail/All Mountain.');
+
+    CREATE TABLE IF NOT EXISTS ressources (
+      RE_id int NOT NULL AUTO_INCREMENT,
+      RE_type varchar(100) NOT NULL,
+      RE_url varchar(1000) NOT NULL,
+      RE_nom varchar(100) DEFAULT NULL,
+      PRO_id int NOT NULL,
+      PRIMARY KEY (RE_id),
+      FOREIGN KEY (PRO_id) REFERENCES produits(PRO_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+    CREATE TABLE IF NOT EXISTS utilisateurs (
+      US_id int NOT NULL AUTO_INCREMENT,
+      US_login varchar(100) NOT NULL,
+      US_password varchar(100) NOT NULL,
+      PRIMARY KEY (US_id),
+      UNIQUE KEY US_login (US_login)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+    INSERT IGNORE INTO utilisateurs (US_login, US_password) VALUES
+    ('admin','5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8');

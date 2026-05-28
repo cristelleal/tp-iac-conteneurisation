@@ -1,0 +1,8 @@
+# Copier ce fichier en terraform.tfvars
+# cp terraform.tfvars.example terraform.tfvars
+
+resource_group_name  = "rg-gestion-produits-k8s"
+location             = "francecentral"
+vm_size              = "Standard_B2s"
+ssh_public_key_path  = "~/.ssh/id_rsa.pub"
+ssh_private_key_path = "~/.ssh/id_rsa"

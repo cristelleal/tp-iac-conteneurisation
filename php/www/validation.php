@@ -17,7 +17,10 @@
             $res->execute();
             if ($res) {
 
-                $PRO_id = $db->lastInsertId();
+                // PostgreSQL : lastInsertId() nécessite le nom de la séquence
+                $PRO_id = ($DB_TYPE === 'pgsql')
+                    ? $db->lastInsertId('produits_PRO_id_seq')
+                    : $db->lastInsertId();
 
                 foreach ($_FILES["PRO_ressources"]["error"] as $key => $error) {
                     if ($error == UPLOAD_ERR_OK) {

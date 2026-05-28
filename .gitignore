@@ -1,0 +1,16 @@
+# Variables d'environnement (contient des mots de passe)
+.env
+
+# Terraform : fichiers générés, ne pas committer
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.*.backup
+*.tfstate.lock.info
+terraform.tfvars
+
+# Fichiers de backup créés par sed
+*.bak
+
+# macOS
+.DS_Store

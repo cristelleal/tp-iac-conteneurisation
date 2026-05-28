@@ -1,0 +1,53 @@
+# Deployment PHP — version production (connecté à MySQL)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-app
+  namespace: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php-app
+  template:
+    metadata:
+      labels:
+        app: php-app
+    spec:
+      containers:
+        - name: php-app
+          image: cristellea/gestion-produits:latest
+          imagePullPolicy: Always   # Toujours télécharger la dernière version
+          env:
+            - name: DB_HOST
+              value: "db"           # Correspond au nom du Service MySQL ci-dessus
+            - name: DB_TYPE
+              value: "mysql"
+            - name: DB_NAME
+              value: "gestion_produits"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: db-user
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: db-password
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: uploads-storage
+              mountPath: /var/www/html/uploads
+          # Sonde de disponibilité : attend que Apache réponde avant d'envoyer du trafic
+          readinessProbe:
+            httpGet:
+              path: /index.php
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: uploads-storage
+          persistentVolumeClaim:
+            claimName: uploads-pvc

@@ -1,0 +1,43 @@
+# Variables du module Terraform pour l'infrastructure Docker
+
+variable "resource_group_name" {
+  description = "Nom du groupe de ressources Azure"
+  type        = string
+  default     = "rg-gestion-produits-docker"
+}
+
+variable "location" {
+  description = "Région Azure (ex: francecentral, westeurope)"
+  type        = string
+  default     = "francecentral"
+}
+
+variable "vm_size" {
+  description = "Taille de la VM Azure (Standard_B2ms = 2 vCPU, 8 GB RAM)"
+  type        = string
+  default     = "Standard_B2ms"
+}
+
+variable "ssh_public_key_path" {
+  description = "Chemin vers la clé SSH publique (~/.ssh/id_rsa.pub)"
+  type        = string
+  default     = "~/.ssh/id_rsa.pub"
+}
+
+variable "ssh_private_key_path" {
+  description = "Chemin vers la clé SSH privée (~/.ssh/id_rsa)"
+  type        = string
+  default     = "~/.ssh/id_rsa"
+}
+
+variable "db_password" {
+  description = "Mot de passe pour MySQL et PostgreSQL"
+  type        = string
+  sensitive   = true  # Masqué dans les logs Terraform
+  default     = "rootpassword"
+}
+
+variable "docker_image" {
+  description = "Image Docker de l'application (ex: monusername/gestion-produits:latest)"
+  type        = string
+}

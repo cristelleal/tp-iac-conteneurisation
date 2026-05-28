@@ -1,0 +1,10 @@
+# Copier ce fichier en terraform.tfvars et remplir les valeurs
+# cp terraform.tfvars.example terraform.tfvars
+
+resource_group_name  = "rg-gestion-produits-docker"
+location             = "francecentral"
+vm_size              = "Standard_B2s"
+ssh_public_key_path  = "~/.ssh/id_rsa.pub"
+ssh_private_key_path = "~/.ssh/id_rsa"
+db_password          = "ChangeMe123!"
+docker_image         = "VOTRE_USERNAME/gestion-produits:latest"

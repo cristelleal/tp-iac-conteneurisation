@@ -1,0 +1,130 @@
+version: '3.8'
+
+# Stack complète : prod (MySQL) + dev (PostgreSQL) + Nginx reverse proxy
+# Accès :
+#   http://app.gestion-produits.local → version prod MySQL
+#   http://dev.gestion-produits.local → version dev PostgreSQL
+
+services:
+
+  # ─────────────────────────────────────────
+  # REVERSE PROXY — point d'entrée unique
+  # Écoute sur le port 80 de la machine hôte
+  # ─────────────────────────────────────────
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: gestion-produits-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - php-prod
+      - php-dev
+    networks:
+      - gp-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # VERSION PROD — base de données MySQL
+  # ─────────────────────────────────────────
+  db-prod:
+    image: mysql:8.0
+    container_name: gestion-produits-db-prod
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: gestion_produits
+    volumes:
+      # Données persistantes MySQL
+      - mysql_data:/var/lib/mysql
+      # Script SQL exécuté automatiquement à la création de la base
+      - ./database/gestion_produits.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - gp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  php-prod:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: gestion-produits:latest
+    container_name: gestion-produits-php-prod
+    environment:
+      DB_HOST: db-prod
+      DB_USER: root
+      DB_PASS: ${DB_PASSWORD:-rootpassword}
+      DB_NAME: gestion_produits
+      DB_TYPE: mysql
+    volumes:
+      # Volume persistant pour les images uploadées par les utilisateurs
+      - uploads_prod:/var/www/html/uploads
+    depends_on:
+      db-prod:
+        condition: service_healthy
+    networks:
+      - gp-network
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # VERSION DEV — base de données PostgreSQL
+  # ─────────────────────────────────────────
+  db-dev:
+    image: postgres:15-alpine
+    container_name: gestion-produits-db-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-rootpassword}
+      POSTGRES_DB: gestion_produits
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/gestion_produits_pg.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - gp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  php-dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: gestion-produits:latest
+    container_name: gestion-produits-php-dev
+    environment:
+      DB_HOST: db-dev
+      DB_USER: postgres
+      DB_PASS: ${DB_PASSWORD:-rootpassword}
+      DB_NAME: gestion_produits
+      DB_TYPE: pgsql          # ← bascule vers PostgreSQL
+    volumes:
+      - uploads_dev:/var/www/html/uploads
+    depends_on:
+      db-dev:
+        condition: service_healthy
+    networks:
+      - gp-network
+    restart: unless-stopped
+
+# ─────────────────────────────────────────
+# VOLUMES — données persistantes
+# ─────────────────────────────────────────
+volumes:
+  mysql_data:      # données MySQL (prod)
+  postgres_data:   # données PostgreSQL (dev)
+  uploads_prod:    # images produits (prod)
+  uploads_dev:     # images produits (dev)
+
+# ─────────────────────────────────────────
+# RÉSEAU — réseau interne entre les conteneurs
+# ─────────────────────────────────────────
+networks:
+  gp-network:
+    driver: bridge

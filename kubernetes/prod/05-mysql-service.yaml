@@ -1,0 +1,14 @@
+# Service MySQL — expose MySQL à l'intérieur du cluster
+# Les pods PHP se connectent à "db" (nom DNS automatique dans le namespace)
+apiVersion: v1
+kind: Service
+metadata:
+  name: db     # Ce nom devient le DNS : db.prod.svc.cluster.local
+  namespace: prod
+spec:
+  selector:
+    app: mysql   # Cible les pods avec le label app=mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+  type: ClusterIP  # Accessible uniquement depuis l'intérieur du cluster

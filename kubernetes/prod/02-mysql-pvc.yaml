@@ -1,0 +1,13 @@
+# PersistentVolumeClaim : réserve 5 Go de stockage pour MySQL
+# MicroK8s crée automatiquement le volume grâce à l'add-on "storage"
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-pvc
+  namespace: prod
+spec:
+  accessModes:
+    - ReadWriteOnce   # Un seul pod peut écrire à la fois (suffisant pour MySQL)
+  resources:
+    requests:
+      storage: 5Gi

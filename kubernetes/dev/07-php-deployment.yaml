@@ -1,0 +1,53 @@
+# Deployment PHP — environnement dev (connecté à PostgreSQL)
+# La seule différence avec prod : DB_TYPE=pgsql et DB_USER=postgres
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-app
+  namespace: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: php-app
+  template:
+    metadata:
+      labels:
+        app: php-app
+    spec:
+      containers:
+        - name: php-app
+          image: cristellea/gestion-produits:latest
+          imagePullPolicy: Always
+          env:
+            - name: DB_HOST
+              value: "db"
+            - name: DB_TYPE
+              value: "pgsql"        # ← bascule vers PostgreSQL
+            - name: DB_NAME
+              value: "gestion_produits"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: db-user
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: db-password
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: uploads-storage
+              mountPath: /var/www/html/uploads
+          readinessProbe:
+            httpGet:
+              path: /index.php
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: uploads-storage
+          persistentVolumeClaim:
+            claimName: uploads-pvc

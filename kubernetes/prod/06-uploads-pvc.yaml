@@ -1,0 +1,13 @@
+# PersistentVolumeClaim pour les images uploadées par les utilisateurs
+# Les images restent disponibles même si le pod PHP redémarre
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-pvc
+  namespace: prod
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi

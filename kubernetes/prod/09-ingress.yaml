@@ -1,0 +1,23 @@
+# Ingress — règle de routage HTTP vers l'application
+# L'Ingress Controller (Nginx, activé par MicroK8s) lit cette règle et
+# redirige le trafic de "app.gestion-produits.local" vers le service PHP
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: php-ingress
+  namespace: prod
+  annotations:
+    # Indique d'utiliser le Nginx Ingress Controller de MicroK8s
+    kubernetes.io/ingress.class: "public"
+spec:
+  rules:
+    - host: app.gestion-produits.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: php-service
+                port:
+                  number: 80
