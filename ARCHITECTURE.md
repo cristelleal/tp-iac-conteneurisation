@@ -2,212 +2,322 @@
 
 ## Vue d'ensemble
 
-Ce projet déploie une application PHP de gestion de produits sur deux environnements :
+Ce projet déploie une application PHP de gestion de produits sur trois environnements :
 
-- **Local** : Docker Compose sur ta machine
-- **Cloud** : Azure, via Terraform, en deux configurations :
-  - Une VM avec Docker + Nginx (infra Docker)
-  - Un cluster Kubernetes 3 nœuds avec MicroK8s (infra K8s)
+| Environnement | Infrastructure | Déclenchement |
+|---|---|---|
+| **Local** | Docker Compose sur le poste de développement | `docker compose up` |
+| **Cloud — Docker** | 1 VM Azure + Docker Compose | `terraform apply` (docker-infra) |
+| **Cloud — Kubernetes** | 3 VMs Azure + cluster MicroK8s 3 nœuds | `terraform apply` (k8s-infra) |
 
 ---
 
 ## 1. Application PHP
 
-L'application est un CRUD de gestion de produits (PHP 8.2 + Apache).
+CRUD de gestion de produits en PHP 8.2 + Apache.
 
-Elle supporte deux bases de données selon l'environnement :
+L'application supporte deux moteurs de base de données via la variable d'environnement `DB_TYPE` :
 
-| Variable `DB_TYPE` | Base de données | Environnement |
-|--------------------|-----------------|---------------|
-| `mysql`            | MySQL 8.0       | prod          |
-| `pgsql`            | PostgreSQL 15   | dev           |
+| `DB_TYPE` | Base de données | Environnement |
+|-----------|-----------------|---------------|
+| `mysql`   | MySQL 8.0       | prod          |
+| `pgsql`   | PostgreSQL 15   | dev           |
 
-### Fichiers modifiés pour la compatibilité MySQL / PostgreSQL
+### Adaptations pour la compatibilité MySQL / PostgreSQL
 
-| Fichier | Modification |
-|---------|-------------|
-| `php/www/connect.php` | Connexion via variables d'environnement, bascule PDO mysql/pgsql selon `DB_TYPE` |
-| `php/www/auth.php` | Hash SHA256 calculé en PHP (la fonction `SHA2()` est MySQL uniquement) |
-| `php/www/validation.php` | `lastInsertId()` avec nom de séquence pour PostgreSQL |
+L'application d'origine était MySQL-only. Trois fichiers ont été modifiés :
+
+| Fichier | Problème d'origine | Solution |
+|---------|-------------------|----------|
+| `php/www/connect.php` | Credentials en dur, driver MySQL fixe | Connexion via variables d'environnement, bascule PDO mysql/pgsql selon `DB_TYPE` |
+| `php/www/auth.php` | Utilise `SHA2()`, fonction MySQL uniquement | Hash calculé côté PHP avec `hash('sha256', ...)` |
+| `php/www/validation.php` | `lastInsertId()` sans argument | Appel `lastInsertId('table_id_seq')` pour PostgreSQL (requiert le nom de la séquence) |
 
 ---
 
 ## 2. Conteneurisation Docker
 
-### Image Docker (`docker/Dockerfile`)
+### Image (`docker/Dockerfile`)
 
-Basée sur `php:8.2-apache`. Elle installe les extensions PDO pour MySQL et PostgreSQL, active le module Apache `rewrite`, et copie le code PHP.
+Base : `php:8.2-apache`
 
 ```
 php:8.2-apache
-  └── pdo + pdo_mysql + pdo_pgsql
-  └── apache mod_rewrite
-  └── code PHP (php/www/)
+  ├── extensions : pdo, pdo_mysql, pdo_pgsql
+  ├── Apache mod_rewrite activé
+  ├── code PHP (php/www/)
   └── entrypoint.sh (copie les images de démo au premier démarrage)
 ```
 
+L'image est construite pour `linux/amd64` (nécessaire sur Mac Apple Silicon pour garantir la compatibilité avec les VMs Azure x86).
+
 ### Stack locale — Docker Compose
 
-Lance 5 conteneurs sur ton Mac :
+5 conteneurs sur le poste de développement :
 
 ```
-Port 80
-   │
-   ▼
-┌─────────────────────────────────────────────┐
-│  nginx (reverse proxy)                       │
-│  app.gestion-produits.local → php-prod:80   │
-│  dev.gestion-produits.local → php-dev:80    │
-└───────────────┬─────────────────┬───────────┘
-                │                 │
-        ┌───────▼───────┐ ┌───────▼───────┐
-        │   php-prod    │ │   php-dev     │
-        │ DB_TYPE=mysql │ │ DB_TYPE=pgsql │
-        └───────┬───────┘ └───────┬───────┘
-                │                 │
-        ┌───────▼───────┐ ┌───────▼───────┐
-        │  db-prod      │ │  db-dev       │
-        │  MySQL 8.0    │ │  PostgreSQL15 │
-        └───────────────┘ └───────────────┘
+Port 80 (hôte)
+      │
+      ▼
+┌─────────────────────────────────────────────────┐
+│  nginx:1.25-alpine  (reverse proxy)             │
+│  app.gestion-produits.local  → php-prod:80      │
+│  dev.gestion-produits.local  → php-dev:80       │
+└────────────────┬─────────────────┬──────────────┘
+                 │                 │
+       ┌─────────▼────────┐ ┌──────▼──────────┐
+       │    php-prod      │ │    php-dev       │
+       │  DB_TYPE=mysql   │ │  DB_TYPE=pgsql   │
+       └─────────┬────────┘ └──────┬───────────┘
+                 │                 │
+       ┌─────────▼────────┐ ┌──────▼───────────┐
+       │   db-prod        │ │   db-dev          │
+       │   MySQL 8.0      │ │   PostgreSQL 15   │
+       └──────────────────┘ └───────────────────┘
 ```
+
+Volumes nommés pour la persistance : `mysql_data`, `postgres_data`, `uploads_prod`, `uploads_dev`.
 
 ---
 
 ## 3. Infrastructure Docker sur Azure (Terraform)
 
-### Pourquoi 8 ressources pour une seule VM ?
+### Pourquoi 8 ressources pour 1 seule VM ?
 
-Sur Azure, une machine virtuelle ne peut pas exister seule. Elle a besoin de tout un réseau autour d'elle. Terraform crée chaque composant explicitement :
+Sur Azure, une VM ne peut pas exister de façon autonome. Elle a besoin d'un ensemble de ressources réseau. Terraform les crée toutes explicitement :
 
 ```
 Azure
-└── Resource Group  (1)  — conteneur logique qui regroupe tout
-    ├── Virtual Network  (2)  — réseau privé virtuel (10.0.0.0/16)
-    │   └── Subnet  (3)  — sous-réseau de la VM (10.0.1.0/24)
+└── Resource Group  (1)  — conteneur logique obligatoire
+    ├── Virtual Network  (2)  — réseau privé 10.0.0.0/16
+    │   └── Subnet  (3)  — sous-réseau 10.0.1.0/24
     ├── Network Security Group  (4)  — pare-feu : ports 22, 80, 443
     ├── Public IP  (5)  — adresse IP publique fixe (Static)
-    ├── Network Interface  (6)  — carte réseau virtuelle de la VM
-    ├── NIC ↔ NSG Association  (7)  — branche le pare-feu sur la carte réseau
-    └── Linux Virtual Machine  (8)  — la VM Ubuntu 22.04 (Standard_B2s)
+    ├── Network Interface  (6)  — carte réseau virtuelle
+    ├── NIC ↔ NSG Association  (7)  — branche le pare-feu sur la NIC
+    └── Linux Virtual Machine  (8)  — Ubuntu 22.04, Standard_B2s
 ```
 
-### Détail de chaque ressource
+### Rôle de chaque ressource Terraform
 
-| # | Ressource Terraform | Rôle |
-|---|---------------------|------|
-| 1 | `azurerm_resource_group` | Conteneur obligatoire sur Azure. Toutes les ressources d'un projet doivent être dans un groupe. |
-| 2 | `azurerm_virtual_network` | Le réseau privé de la VM. Personne d'autre ne peut y accéder directement. Plage d'adresses : `10.0.0.0/16` (65 000 adresses). |
-| 3 | `azurerm_subnet` | Découpe du VNet en sous-réseaux. Ici un seul : `10.0.1.0/24` (256 adresses). |
-| 4 | `azurerm_network_security_group` | Le pare-feu. Définit les règles d'entrée (inbound) : SSH port 22, HTTP port 80, HTTPS port 443. Tout le reste est bloqué. |
-| 5 | `azurerm_public_ip` | L'IP publique visible depuis internet. En mode `Static` : elle ne change pas si la VM redémarre. |
-| 6 | `azurerm_network_interface` | La carte réseau virtuelle. Relie la VM au subnet et à l'IP publique. |
-| 7 | `azurerm_network_interface_security_group_association` | Attache le pare-feu (NSG) à la carte réseau. Sans ça, les règles du NSG ne s'appliquent pas. |
-| 8 | `azurerm_linux_virtual_machine` | La VM elle-même. Ubuntu 22.04 LTS, taille Standard_B2s (2 vCPU, 4 GB RAM). Terraform s'y connecte en SSH pour installer Docker et démarrer les conteneurs. |
+| # | Ressource | Rôle |
+|---|-----------|------|
+| 1 | `azurerm_resource_group` | Conteneur obligatoire. Toutes les ressources d'un projet y sont regroupées. |
+| 2 | `azurerm_virtual_network` | Réseau privé isolé. Plage `10.0.0.0/16` (65 534 adresses). |
+| 3 | `azurerm_subnet` | Découpe du VNet. Ici un seul sous-réseau : `10.0.1.0/24`. |
+| 4 | `azurerm_network_security_group` | Pare-feu inbound : autorise SSH (22), HTTP (80), HTTPS (443). Tout le reste est bloqué. |
+| 5 | `azurerm_public_ip` | IP publique statique — ne change pas au redémarrage de la VM. |
+| 6 | `azurerm_network_interface` | Relie la VM au subnet et à l'IP publique. |
+| 7 | `azurerm_network_interface_security_group_association` | Sans cette ressource, le NSG est créé mais n'est pas appliqué à la NIC. |
+| 8 | `azurerm_linux_virtual_machine` | VM Ubuntu 22.04 LTS, Standard_B2s (2 vCPU, 4 GB RAM). |
 
-### Flux de déploiement Terraform (infra Docker)
+### Flux de déploiement Terraform — infra Docker
 
 ```
 terraform apply
     │
-    ├── 1. Crée les 8 ressources Azure
+    ├── 1. Création des 8 ressources Azure réseau + VM
     │
-    ├── 2. Provisioner "file" — copie sur la VM :
-    │       docker-compose.prod.yml → /home/azureuser/docker-compose.yml
-    │       docker/nginx/nginx.conf → /home/azureuser/nginx/
-    │       database/*.sql         → /home/azureuser/database/
+    ├── 2. Provisioner "file" (copie sur la VM via SSH) :
+    │       docker-compose.prod.yml  →  /home/azureuser/docker-compose.yml
+    │       docker/nginx/nginx.conf  →  /home/azureuser/nginx/
+    │       database/*.sql           →  /home/azureuser/database/
     │
-    └── 3. Provisioner "remote-exec" — exécute setup-docker.sh :
+    └── 3. Provisioner "remote-exec" — scripts/setup-docker.sh :
             apt install docker-ce docker-compose-plugin
-            docker compose pull   (tire l'image depuis Docker Hub)
-            docker compose up -d  (lance nginx + mysql + postgres + php×2)
+            docker compose pull    ← tire l'image depuis Docker Hub
+            docker compose up -d   ← lance nginx + mysql + postgres + php×2
 ```
 
 ---
 
 ## 4. Cluster Kubernetes sur Azure (Terraform)
 
-### Architecture 3 nœuds MicroK8s
+### Architecture réseau 3 nœuds
 
 ```
 Internet
-    │  port 80
+    │  port 80/443
     ▼
-┌──────────────────────────────────────────┐
-│  k8s-master  (Standard_B2s)              │
-│  MicroK8s + dns + ingress + storage      │
-│  Ingress Controller (Nginx)              │
-└────────┬──────────────┬──────────────────┘
-         │              │
-   ┌─────▼──────┐ ┌─────▼──────┐
-   │ k8s-worker-1│ │k8s-worker-2│
-   │ Standard_B2s│ │Standard_B2s│
-   └─────────────┘ └────────────┘
+┌─────────────────────────────────────────────┐
+│  k8s-master  Standard_D2s_v3 (2 vCPU, 8 GB)│
+│  IP publique unique du cluster              │
+│  MicroK8s : dns + ingress + storage         │
+│  Nginx Ingress Controller                   │
+└──────────────┬─────────────────┬────────────┘
+               │ VNet 10.1.1.0/24│ (IP privées seulement)
+      ┌────────▼──────┐  ┌───────▼──────────┐
+      │  k8s-worker-1 │  │  k8s-worker-2    │
+      │ D2as_v4       │  │ D2as_v4          │
+      │ 2 vCPU, 8 GB  │  │ 2 vCPU, 8 GB     │
+      └───────────────┘  └──────────────────┘
 ```
 
-Terraform crée 3 VMs, installe MicroK8s sur chacune, puis les joint automatiquement en cluster via `microk8s add-node` / `microk8s join`.
+**Pourquoi deux familles de VM différentes ?**
 
-### Namespaces Kubernetes
+Les quotas Azure Étudiant s'appliquent par famille de VM. Utiliser deux familles (`standardDSv3` pour le master, `standardDASv4` pour les workers) répartit la consommation sur deux enveloppes distinctes, tout en restant sous le quota total de 6 cœurs.
+
+### Ressources Terraform du cluster (14 au total)
+
+```
+Azure
+└── Resource Group
+    ├── Virtual Network  10.1.0.0/16
+    │   └── Subnet  10.1.1.0/24  (partagé entre les 3 nœuds)
+    ├── Network Security Group  (1 NSG pour les 3 VMs)
+    │   ├── Règle SSH          port 22   (toutes sources)
+    │   ├── Règle HTTP         port 80   (toutes sources)
+    │   ├── Règle HTTPS        port 443  (toutes sources)
+    │   ├── Règle MicroK8s-API port 16443 (VNet interne uniquement)
+    │   ├── Règle MicroK8s-Cluster port 25000 (VNet interne uniquement)
+    │   └── Règle Internal     tout port (VNet interne uniquement)
+    ├── Public IP  (master uniquement — les workers n'ont pas d'IP publique)
+    ├── NIC master  (IP publique + IP privée)
+    ├── NIC worker-1  (IP privée uniquement)
+    ├── NIC worker-2  (IP privée uniquement)
+    ├── NIC ↔ NSG associations  (×3)
+    ├── VM k8s-master
+    ├── VM k8s-worker-1
+    ├── VM k8s-worker-2
+    └── null_resource join_workers
+```
+
+### Flux de déploiement Terraform — infra K8s
+
+```
+terraform apply
+    │
+    ├── 1. Création des ressources réseau Azure
+    │
+    ├── 2. remote-exec sur k8s-master  →  setup-master.sh :
+    │       snap wait system seed.loaded   ← attend que snapd soit prêt
+    │       snap install microk8s --classic --channel=1.28/stable
+    │       microk8s status --wait-ready
+    │       microk8s enable dns ingress storage
+    │
+    ├── 3. remote-exec sur worker-1 et worker-2  →  setup-worker.sh :
+    │       (connexion SSH via le master comme bastion — les workers n'ont pas d'IP publique)
+    │       snap install microk8s --classic --channel=1.28/stable
+    │       microk8s status --wait-ready
+    │       (le worker est prêt mais pas encore joint au cluster)
+    │
+    └── 4. local-exec sur le Mac  →  join-workers.sh :
+            Pour chaque worker :
+              ssh master → microk8s add-node --token-ttl 600
+              ssh worker (via ProxyCommand → master) → microk8s join <token>
+            ssh master → microk8s kubectl get nodes  (vérification)
+```
+
+**Détail du `join-workers.sh` :**
+
+Les workers n'ayant pas d'IP publique, la connexion SSH depuis le Mac passe par le master comme jump host. Le script utilise `ProxyCommand` plutôt que `-J` car les placeholders SSH `%h:%p` ne se transmettent pas correctement à travers une variable shell avec `-J`.
+
+```bash
+ssh_worker() {
+  local target_ip="$1"; shift
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $SSH_PRIVATE_KEY \
+    -o "ProxyCommand=ssh -o StrictHostKeyChecking=no ... -W %h:%p azureuser@$MASTER_IP" \
+    azureuser@"$target_ip" "$@"
+}
+```
+
+### Namespaces Kubernetes déployés
 
 ```
 Cluster MicroK8s
+│
 ├── namespace: prod
-│   ├── Secret (db-secret)           — mot de passe base de données
-│   ├── PVC mysql-pvc (5Gi)          — données MySQL persistantes
-│   ├── PVC uploads-pvc (2Gi)        — images produits persistantes
-│   ├── ConfigMap mysql-configmap    — script SQL d'initialisation
-│   ├── Deployment mysql             — MySQL 8.0
-│   ├── Service db (ClusterIP)       — accès interne MySQL
-│   ├── Deployment php-app           — PHP prod (DB_TYPE=mysql)
-│   ├── Service php-service (ClusterIP)
-│   └── Ingress → app.gestion-produits.local
+│   ├── Secret           db-secret           — credentials base de données (base64)
+│   ├── PVC              mysql-pvc (5 Gi)    — données MySQL persistantes
+│   ├── PVC              uploads-pvc (2 Gi)  — images produits persistantes
+│   ├── ConfigMap        mysql-configmap     — script SQL d'initialisation
+│   ├── Deployment       mysql               — MySQL 8.0
+│   ├── Service          db (ClusterIP)      — accès interne à MySQL
+│   ├── Deployment       php-app             — PHP prod (DB_TYPE=mysql)
+│   ├── Service          php-service (ClusterIP)
+│   └── Ingress          → app.gestion-produits.local
 │
 └── namespace: dev
-    ├── Secret (db-secret)
-    ├── PVC postgres-pvc (5Gi)
-    ├── PVC uploads-pvc (2Gi)
-    ├── ConfigMap postgres-configmap
-    ├── Deployment postgres           — PostgreSQL 15
-    ├── Service db (ClusterIP)
-    ├── Deployment php-app            — PHP dev (DB_TYPE=pgsql)
-    ├── Service php-service (ClusterIP)
-    └── Ingress → dev.gestion-produits.local
+    ├── Secret           db-secret
+    ├── PVC              postgres-pvc (5 Gi)
+    ├── PVC              uploads-pvc (2 Gi)
+    ├── ConfigMap        postgres-configmap
+    ├── Deployment       postgres            — PostgreSQL 15
+    ├── Service          db (ClusterIP)
+    ├── Deployment       php-app             — PHP dev (DB_TYPE=pgsql)
+    ├── Service          php-service (ClusterIP)
+    └── Ingress          → dev.gestion-produits.local
 ```
 
-### Ce qu'est chaque objet Kubernetes
+### Rôle de chaque objet Kubernetes
 
 | Objet | Rôle |
 |-------|------|
-| **Namespace** | Isolation logique — prod et dev ne se voient pas |
-| **Secret** | Stocke les mots de passe encodés en base64 |
-| **PVC** (PersistentVolumeClaim) | Demande de stockage persistant. Les données survivent au redémarrage des pods. |
-| **ConfigMap** | Fichier de configuration injecté dans les conteneurs (ici : script SQL d'init) |
-| **Deployment** | Déclare un conteneur à faire tourner, avec son image et ses variables d'environnement |
-| **Service** | Point d'accès réseau stable vers un Deployment. `ClusterIP` = interne au cluster uniquement. |
-| **Ingress** | Règles HTTP d'entrée : quel nom de domaine → quel Service. Géré par le Nginx intégré à MicroK8s. |
+| **Namespace** | Isolation logique — les ressources prod et dev ne se voient pas, sauf via les Services exposés. |
+| **Secret** | Stocke les credentials encodés en base64. Monté en variables d'environnement dans les pods. |
+| **PVC** (PersistentVolumeClaim) | Demande de stockage persistant. Les données survivent au redémarrage ou remplacement d'un pod. Satisfait par le `storage` add-on de MicroK8s (hostpath). |
+| **ConfigMap** | Fichier de configuration injecté dans les conteneurs. Ici : script SQL exécuté à l'initialisation de la base. |
+| **Deployment** | Déclare un ou plusieurs pods à maintenir en vie, avec leur image, variables d'environnement et volumes. |
+| **Service ClusterIP** | Point d'accès réseau stable et interne au cluster vers un Deployment. L'adresse IP du pod peut changer ; le Service, non. |
+| **Ingress** | Règles de routage HTTP(S) à l'entrée du cluster : tel nom de domaine → tel Service. Géré par le Nginx Ingress Controller intégré à MicroK8s. |
 
 ---
 
-## 5. Résumé des URLs
+## 5. Sécurité réseau
 
-| URL | Environnement | Base de données |
-|-----|---------------|-----------------|
-| `http://app.gestion-produits.local` | prod | MySQL 8.0 |
-| `http://dev.gestion-produits.local` | dev | PostgreSQL 15 |
+### NSG docker-infra
 
-Identifiants : `admin` / `password`
+| Règle | Port | Source | Direction |
+|-------|------|--------|-----------|
+| SSH | 22 | Toute source | Inbound |
+| HTTP | 80 | Toute source | Inbound |
+| HTTPS | 443 | Toute source | Inbound |
+
+### NSG k8s-infra
+
+| Règle | Port | Source | Direction | Raison |
+|-------|------|--------|-----------|--------|
+| SSH | 22 | Toute source | Inbound | Administration |
+| HTTP | 80 | Toute source | Inbound | Application web |
+| HTTPS | 443 | Toute source | Inbound | Application web HTTPS |
+| MicroK8s-API | 16443 | VNet interne | Inbound | API Kubernetes (add-node, kubectl) |
+| MicroK8s-Cluster | 25000 | VNet interne | Inbound | Agent de cluster (join) |
+| Internal | tous ports | VNet interne | Inbound | Communication inter-nœuds (kubelet, Calico, etcd) |
+
+Les ports MicroK8s (16443, 25000) et le trafic interne ne sont accessibles que depuis l'intérieur du VNet (`10.1.0.0/16`), jamais depuis internet.
 
 ---
 
-## 6. Choix techniques
+## 6. Résumé des URLs
 
-| Composant | Technologie | Raison |
-|-----------|-------------|--------|
-| Application | PHP 8.2 + Apache | Existant dans le TP |
-| Image Docker | `php:8.2-apache` | Image officielle, stable |
-| Reverse proxy | Nginx | Léger, virtual hosts simples |
-| IaC | Terraform + Azure provider | Standard industrie |
-| Cloud | Azure for Students | 100$ de crédits, sans CB |
-| VM | Standard_B2s (2 vCPU, 4 GB) | Rapport prix/perf suffisant pour une démo |
-| Distribution K8s | MicroK8s (Canonical) | Installation en une commande via snap, add-ons intégrés (dns, ingress, storage) |
-| Stockage K8s | MicroK8s storage add-on | Zéro configuration pour une démo |
-| Ingress K8s | MicroK8s ingress add-on | Nginx intégré, activé en une commande |
+| URL | Environnement | Base de données | Infrastructure |
+|-----|---------------|-----------------|----------------|
+| `http://app.gestion-produits.local` | prod | MySQL 8.0 | Docker Compose local, docker-infra, k8s-infra |
+| `http://dev.gestion-produits.local` | dev | PostgreSQL 15 | Docker Compose local, docker-infra, k8s-infra |
+
+Identifiants par défaut : `admin` / `password`
+
+---
+
+## 7. Outputs Terraform utiles
+
+### docker-infra
+
+| Output | Valeur |
+|--------|--------|
+| `public_ip` | IP publique de la VM Docker |
+| `hosts_entry` | Lignes prêtes à coller dans `/etc/hosts` |
+| `ssh_command` | Commande SSH pour se connecter à la VM |
+
+### k8s-infra
+
+| Output | Valeur |
+|--------|--------|
+| `master_ip` | IP publique du nœud master |
+| `worker1_private_ip` | IP privée du worker-1 |
+| `worker2_private_ip` | IP privée du worker-2 |
+| `ssh_master` | `ssh azureuser@<master_ip>` |
+| `ssh_worker1` | `ssh -J azureuser@<master_ip> azureuser@<worker1_ip>` |
+| `ssh_worker2` | `ssh -J azureuser@<master_ip> azureuser@<worker2_ip>` |
+| `hosts_entry` | Lignes à ajouter dans `/etc/hosts` |
+| `kubeconfig_command` | Commande pour récupérer le kubeconfig depuis le master |

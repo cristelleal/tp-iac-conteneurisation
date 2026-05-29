@@ -14,6 +14,10 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+    null = {
+      source  = "hashicorp/null"
       version = "~> 3.0"
     }
   }
@@ -127,20 +131,35 @@ resource "azurerm_network_security_group" "k8s_nsg" {
   }
 }
 
-# ─── IPs PUBLIQUES (une par nœud) ───────────────────────────────
-resource "azurerm_public_ip" "k8s_pip" {
-  for_each = toset(["master", "worker-1", "worker-2"])
-
-  name                = "k8s-${each.key}-pip"
+# ─── IP PUBLIQUE (master uniquement) ────────────────────────────
+# Les workers n'ont pas d'IP publique : ils communiquent via le VNet
+# interne et sont joints au cluster via le master (jump host SSH).
+resource "azurerm_public_ip" "k8s_master_pip" {
+  name                = "k8s-master-pip"
   location            = azurerm_resource_group.k8s_rg.location
   resource_group_name = azurerm_resource_group.k8s_rg.name
   allocation_method   = "Static"
   sku                 = "Standard"
 }
 
-# ─── INTERFACES RÉSEAU (une par nœud) ───────────────────────────
-resource "azurerm_network_interface" "k8s_nic" {
-  for_each = toset(["master", "worker-1", "worker-2"])
+# ─── INTERFACES RÉSEAU ──────────────────────────────────────────
+# Master : IP publique + IP privée
+resource "azurerm_network_interface" "k8s_master_nic" {
+  name                = "k8s-master-nic"
+  location            = azurerm_resource_group.k8s_rg.location
+  resource_group_name = azurerm_resource_group.k8s_rg.name
+
+  ip_configuration {
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.k8s_subnet.id
+    private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.k8s_master_pip.id
+  }
+}
+
+# Workers : IP privée uniquement
+resource "azurerm_network_interface" "k8s_worker_nic" {
+  for_each = toset(["worker-1", "worker-2"])
 
   name                = "k8s-${each.key}-nic"
   location            = azurerm_resource_group.k8s_rg.location
@@ -150,14 +169,18 @@ resource "azurerm_network_interface" "k8s_nic" {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.k8s_subnet.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.k8s_pip[each.key].id
   }
 }
 
-resource "azurerm_network_interface_security_group_association" "k8s_nic_nsg" {
-  for_each = toset(["master", "worker-1", "worker-2"])
+resource "azurerm_network_interface_security_group_association" "k8s_master_nsg" {
+  network_interface_id      = azurerm_network_interface.k8s_master_nic.id
+  network_security_group_id = azurerm_network_security_group.k8s_nsg.id
+}
 
-  network_interface_id      = azurerm_network_interface.k8s_nic[each.key].id
+resource "azurerm_network_interface_security_group_association" "k8s_worker_nsg" {
+  for_each = toset(["worker-1", "worker-2"])
+
+  network_interface_id      = azurerm_network_interface.k8s_worker_nic[each.key].id
   network_security_group_id = azurerm_network_security_group.k8s_nsg.id
 }
 
@@ -170,7 +193,7 @@ resource "azurerm_linux_virtual_machine" "k8s_master" {
   size                = var.vm_size
   admin_username      = "azureuser"
 
-  network_interface_ids = [azurerm_network_interface.k8s_nic["master"].id]
+  network_interface_ids = [azurerm_network_interface.k8s_master_nic.id]
 
   admin_ssh_key {
     username   = "azureuser"
@@ -211,10 +234,10 @@ resource "azurerm_linux_virtual_machine" "k8s_workers" {
   name                = "k8s-${each.key}"
   location            = azurerm_resource_group.k8s_rg.location
   resource_group_name = azurerm_resource_group.k8s_rg.name
-  size                = var.vm_size
+  size                = var.worker_vm_size
   admin_username      = "azureuser"
 
-  network_interface_ids = [azurerm_network_interface.k8s_nic[each.key].id]
+  network_interface_ids = [azurerm_network_interface.k8s_worker_nic[each.key].id]
 
   admin_ssh_key {
     username   = "azureuser"
@@ -234,11 +257,14 @@ resource "azurerm_linux_virtual_machine" "k8s_workers" {
     version   = "latest"
   }
 
+  # Les workers n'ont pas d'IP publique : connexion SSH via le master
   connection {
-    type        = "ssh"
-    host        = self.public_ip_address
-    user        = "azureuser"
-    private_key = file(var.ssh_private_key_path)
+    type         = "ssh"
+    host         = azurerm_network_interface.k8s_worker_nic[each.key].private_ip_address
+    user         = "azureuser"
+    private_key  = file(var.ssh_private_key_path)
+    bastion_host = azurerm_public_ip.k8s_master_pip.ip_address
+    bastion_user = "azureuser"
   }
 
   # Installe MicroK8s sur le worker (sans encore rejoindre le cluster)
@@ -261,11 +287,11 @@ resource "null_resource" "join_workers" {
   provisioner "local-exec" {
     command = "${path.module}/scripts/join-workers.sh"
     environment = {
-      MASTER_IP        = azurerm_public_ip.k8s_pip["master"].ip_address
-      WORKER1_IP       = azurerm_public_ip.k8s_pip["worker-1"].ip_address
-      WORKER2_IP       = azurerm_public_ip.k8s_pip["worker-2"].ip_address
+      MASTER_IP        = azurerm_public_ip.k8s_master_pip.ip_address
+      WORKER1_IP       = azurerm_network_interface.k8s_worker_nic["worker-1"].private_ip_address
+      WORKER2_IP       = azurerm_network_interface.k8s_worker_nic["worker-2"].private_ip_address
       SSH_PRIVATE_KEY  = var.ssh_private_key_path
-      MASTER_PRIVATE_IP = azurerm_network_interface.k8s_nic["master"].private_ip_address
+      MASTER_PRIVATE_IP = azurerm_network_interface.k8s_master_nic.private_ip_address
     }
   }
 }

@@ -11,9 +11,15 @@ variable "location" {
 }
 
 variable "vm_size" {
-  description = "Taille des VMs (Standard_B2s = 2 vCPU, 4 GB RAM)"
+  description = "Taille de la VM master (Standard_D2s_v3 = 2 vCPU, 8 GB RAM)"
   type        = string
-  default     = "Standard_B2s"
+  default     = "Standard_D2s_v3"
+}
+
+variable "worker_vm_size" {
+  description = "Taille des VMs workers — famille différente pour éviter les limites de quota Azure par famille (Standard_D2as_v4 = 2 vCPU, 8 GB RAM)"
+  type        = string
+  default     = "Standard_D2as_v4"
 }
 
 variable "ssh_public_key_path" {
