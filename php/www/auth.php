@@ -15,7 +15,7 @@
         if ($res != false) {
             if (count($res) > 0) {
                 $utilisateur = $res[0];
-                $_SESSION['login'] = $utilisateur['US_login'];
+                $_SESSION['login'] = $utilisateur['us_login'];
                 header("Location: home.php");
             } else {
                 header("Location: index.php");

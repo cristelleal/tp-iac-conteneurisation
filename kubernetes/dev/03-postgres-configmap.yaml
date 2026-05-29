@@ -6,13 +6,13 @@ metadata:
 data:
   init.sql: |
     CREATE TABLE IF NOT EXISTS produits (
-      "PRO_id"          SERIAL PRIMARY KEY,
-      "PRO_lib"         VARCHAR(200) NOT NULL,
-      "PRO_prix"        DECIMAL(10,2) NOT NULL,
-      "PRO_description" TEXT
+      pro_id          SERIAL PRIMARY KEY,
+      pro_lib         VARCHAR(200) NOT NULL,
+      pro_prix        DECIMAL(10,2) NOT NULL,
+      pro_description TEXT
     );
 
-    INSERT INTO produits ("PRO_id","PRO_lib","PRO_prix","PRO_description") VALUES
+    INSERT INTO produits (pro_id, pro_lib, pro_prix, pro_description) VALUES
     (1,'Pédales Shimano XT M8040 M/L',74.99,'Les pédales plates SHIMANO XT PD-M8040.'),
     (2,'Selle FIZIK ARIONE VERSUS Rails Kium',59.99,'Modèle confortable.'),
     (3,'Chaussures VTT MAVIC CROSSMAX SL PRO THERMO Noir',164.99,'Chaussures hiver.'),
@@ -20,24 +20,24 @@ data:
     (5,'Fourche DVO SAPPHIRE 29',549.99,'Fourche Trail/All Mountain.')
     ON CONFLICT DO NOTHING;
 
-    SELECT setval('"produits_PRO_id_seq"', (SELECT MAX("PRO_id") FROM produits));
+    SELECT setval('produits_pro_id_seq', (SELECT MAX(pro_id) FROM produits));
 
     CREATE TABLE IF NOT EXISTS ressources (
-      "RE_id"   SERIAL PRIMARY KEY,
-      "RE_type" VARCHAR(100) NOT NULL,
-      "RE_url"  VARCHAR(1000) NOT NULL,
-      "RE_nom"  VARCHAR(100) DEFAULT NULL,
-      "PRO_id"  INTEGER NOT NULL,
-      CONSTRAINT ressources_produits_fk FOREIGN KEY ("PRO_id") REFERENCES produits("PRO_id")
+      re_id   SERIAL PRIMARY KEY,
+      re_type VARCHAR(100) NOT NULL,
+      re_url  VARCHAR(1000) NOT NULL,
+      re_nom  VARCHAR(100) DEFAULT NULL,
+      pro_id  INTEGER NOT NULL,
+      CONSTRAINT ressources_produits_fk FOREIGN KEY (pro_id) REFERENCES produits(pro_id)
     );
 
     CREATE TABLE IF NOT EXISTS utilisateurs (
-      "US_id"       SERIAL PRIMARY KEY,
-      "US_login"    VARCHAR(100) NOT NULL,
-      "US_password" VARCHAR(100) NOT NULL,
-      CONSTRAINT utilisateurs_login_unique UNIQUE ("US_login")
+      us_id       SERIAL PRIMARY KEY,
+      us_login    VARCHAR(100) NOT NULL,
+      us_password VARCHAR(100) NOT NULL,
+      CONSTRAINT utilisateurs_login_unique UNIQUE (us_login)
     );
 
-    INSERT INTO utilisateurs ("US_login","US_password") VALUES
+    INSERT INTO utilisateurs (us_login, us_password) VALUES
     ('admin','5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8')
     ON CONFLICT DO NOTHING;

@@ -19,8 +19,8 @@
             header('Location: home.php');
         } else {
             $produit = $res->fetch(PDO::FETCH_ASSOC);
-            $PRO_id = $produit['PRO_id'];
-            $prix = number_format($produit['PRO_prix'], 2, ',', ' ');
+            $PRO_id = $produit['pro_id'];
+            $prix = number_format($produit['pro_prix'], 2, ',', ' ');
         }
     }
 
@@ -40,7 +40,7 @@
     <div class="container">
 
         <h1>
-            <?php echo $produit['PRO_lib']; ?>
+            <?php echo $produit['pro_lib']; ?>
         </h1>
 
         <div class="prix">
@@ -50,7 +50,7 @@
         </div>
 
         <div class="description">
-            <?php echo nl2br($produit['PRO_description']); ?>
+            <?php echo nl2br($produit['pro_description']); ?>
         </div>
         
 
@@ -71,8 +71,8 @@
 
             <?php
                 foreach($ressources as $ressource) {
-                    if ($ressource['RE_type'] == 'img') {
-                        echo '<img src="'.$ressource['RE_url'].'" class="img-thumbnail thumb" data-id="'.$ressource['RE_id'].'">';
+                    if ($ressource['re_type'] == 'img') {
+                        echo '<img src="'.$ressource['re_url'].'" class="img-thumbnail thumb" data-id="'.$ressource['re_id'].'">';
                     }
                 }
             ?>

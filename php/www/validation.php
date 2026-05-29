@@ -17,9 +17,8 @@
             $res->execute();
             if ($res) {
 
-                // PostgreSQL : lastInsertId() nécessite le nom de la séquence
                 $PRO_id = ($DB_TYPE === 'pgsql')
-                    ? $db->lastInsertId('produits_PRO_id_seq')
+                    ? $db->lastInsertId('produits_pro_id_seq')
                     : $db->lastInsertId();
 
                 foreach ($_FILES["PRO_ressources"]["error"] as $key => $error) {
@@ -93,14 +92,14 @@
                 $res = $res->fetchAll(PDO::FETCH_ASSOC);
                 if(count($res) > 0) {
                     $ressource = $res[0];
-                    
+
                     $sql = "DELETE FROM ressources WHERE RE_id = ?";
                     $res = $db->prepare($sql);
                     $res->bindParam(1, $_POST['RE_id']);
                     $res->execute();
                     if ($res) {
-                        if (file_exists($ressource['RE_url'])) {
-                            unlink($ressource['RE_url']);
+                        if (file_exists($ressource['re_url'])) {
+                            unlink($ressource['re_url']);
                         }
                         echo 'OK';
                     } else {
@@ -130,14 +129,14 @@
                     $res2->execute();
                     $ressources = $res2->fetchAll(PDO::FETCH_ASSOC);
                     foreach($ressources as $ressource) {
-                        $RE_id = $ressource['RE_id'];
+                        $RE_id = $ressource['re_id'];
                         $sql = "DELETE FROM ressources WHERE RE_id = ?";
                         $res = $db->prepare($sql);
                         $res->bindParam(1, $RE_id);
                         $res->execute();
                         if ($res) {
-                            if (file_exists($ressource['RE_url'])) {
-                                unlink($ressource['RE_url']);
+                            if (file_exists($ressource['re_url'])) {
+                                unlink($ressource['re_url']);
                             }
                         }
                     }

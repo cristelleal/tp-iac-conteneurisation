@@ -1,4 +1,4 @@
-# TP IaC – Conteneurisation avancée — M1 DEV EPSI
+# TP IaC ≡ Conteneurisation avancée ≡ M1 DEV EPSI
 
 Application PHP de gestion de produits déployée sur Docker et Kubernetes (MicroK8s) via Terraform sur Azure.
 

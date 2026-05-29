@@ -17,7 +17,7 @@ variable "vm_size" {
 }
 
 variable "worker_vm_size" {
-  description = "Taille des VMs workers — famille différente pour éviter les limites de quota Azure par famille (Standard_D2as_v4 = 2 vCPU, 8 GB RAM)"
+  description = "Taille des VMs workers (Standard_D2as_v4 = 2 vCPU, 8 GB RAM)"
   type        = string
   default     = "Standard_D2as_v4"
 }
