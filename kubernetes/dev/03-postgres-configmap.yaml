@@ -1,4 +1,3 @@
-# ConfigMap : script SQL d'initialisation PostgreSQL
 apiVersion: v1
 kind: ConfigMap
 metadata:

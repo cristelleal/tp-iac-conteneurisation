@@ -1,5 +1,3 @@
-# Namespace Kubernetes pour l'environnement de production
-# Un namespace isole les ressources : les pods "prod" et "dev" ne se voient pas
 apiVersion: v1
 kind: Namespace
 metadata:

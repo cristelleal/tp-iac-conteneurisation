@@ -1,4 +1,3 @@
-# Namespace Kubernetes pour l'environnement de développement (PostgreSQL)
 apiVersion: v1
 kind: Namespace
 metadata:

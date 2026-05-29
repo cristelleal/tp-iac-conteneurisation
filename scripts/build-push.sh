@@ -9,7 +9,6 @@ DOCKER_USER=${1:?"Usage: $0 <docker-username>"}
 IMAGE="$DOCKER_USER/gestion-produits:latest"
 
 echo "=== Build de l'image Docker ==="
-# --platform : compile pour x86_64 (VMs Azure) même si tu es sur Mac ARM
 docker build \
   --platform linux/amd64 \
   -t "$IMAGE" \

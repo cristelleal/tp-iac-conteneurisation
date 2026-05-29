@@ -1,12 +1,10 @@
-# Deployment MySQL — version production
-# Un "Deployment" gère le cycle de vie d'un pod (redémarrage automatique, rolling update, etc.)
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mysql
   namespace: prod
 spec:
-  replicas: 1   # MySQL doit avoir 1 seule instance pour éviter les conflits d'écriture
+  replicas: 1
   selector:
     matchLabels:
       app: mysql
@@ -19,7 +17,6 @@ spec:
         - name: mysql
           image: mysql:8.0
           env:
-            # Les valeurs viennent du Secret (jamais en clair dans le YAML)
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -30,13 +27,10 @@ spec:
           ports:
             - containerPort: 3306
           volumeMounts:
-            # Données persistantes : les données survivent au redémarrage du pod
             - name: mysql-storage
               mountPath: /var/lib/mysql
-            # Script SQL d'initialisation (issu du ConfigMap)
             - name: mysql-initdb
               mountPath: /docker-entrypoint-initdb.d
-          # Sonde de disponibilité : K8s attend que MySQL soit prêt avant d'envoyer du trafic
           readinessProbe:
             exec:
               command: ["mysqladmin", "ping", "-h", "localhost"]

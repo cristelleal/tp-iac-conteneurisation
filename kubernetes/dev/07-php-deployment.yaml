@@ -1,5 +1,3 @@
-# Deployment PHP — environnement dev (connecté à PostgreSQL)
-# La seule différence avec prod : DB_TYPE=pgsql et DB_USER=postgres
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,7 +21,7 @@ spec:
             - name: DB_HOST
               value: "db"
             - name: DB_TYPE
-              value: "pgsql"        # ← bascule vers PostgreSQL
+              value: "pgsql"
             - name: DB_NAME
               value: "gestion_produits"
             - name: DB_USER

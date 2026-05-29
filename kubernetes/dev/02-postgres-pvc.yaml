@@ -1,4 +1,3 @@
-# Stockage persistant pour PostgreSQL
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

@@ -5,13 +5,11 @@ RUN apt-get update && apt-get install -y libpq-dev \
     && docker-php-ext-install pdo pdo_mysql pdo_pgsql \
     && rm -rf /var/lib/apt/lists/*
 
-# Activer mod_rewrite Apache
 RUN a2enmod rewrite
 
-# Copier les sources de l'application
 COPY php/www/ /var/www/html/
 
-# Sauvegarder les images de démo pour initialisation du volume au premier démarrage
+# Seed des images de démo pour l'initialisation du volume (voir entrypoint.sh)
 RUN cp -r /var/www/html/uploads /var/www/html/uploads_seed \
     && chown -R www-data:www-data /var/www/html \
     && chmod 755 /var/www/html/uploads
