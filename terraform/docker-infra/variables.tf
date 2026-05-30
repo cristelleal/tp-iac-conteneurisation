@@ -30,14 +30,3 @@ variable "ssh_private_key_path" {
   default     = "~/.ssh/id_rsa"
 }
 
-variable "db_password" {
-  description = "Mot de passe pour MySQL et PostgreSQL"
-  type        = string
-  sensitive   = true  # Masqué dans les logs Terraform
-  default     = "rootpassword"
-}
-
-variable "docker_image" {
-  description = "Image Docker de l'application (ex: monusername/gestion-produits:latest)"
-  type        = string
-}

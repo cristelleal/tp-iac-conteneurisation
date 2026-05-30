@@ -156,13 +156,5 @@
                 }
             }
             break;
-        
-        
-        
-        default:
-            # code...
-            break;
     }
-
-
 ?>
