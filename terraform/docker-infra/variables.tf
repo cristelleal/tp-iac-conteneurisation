@@ -13,9 +13,9 @@ variable "location" {
 }
 
 variable "vm_size" {
-  description = "Taille de la VM Azure (Standard_B2ms = 2 vCPU, 8 GB RAM)"
+  description = "Taille de la VM Azure (Standard_D2s_v3 = 2 vCPU, 8 GB RAM)"
   type        = string
-  default     = "Standard_B2ms"
+  default     = "Standard_D2s_v3"
 }
 
 variable "ssh_public_key_path" {
@@ -28,5 +28,10 @@ variable "ssh_private_key_path" {
   description = "Chemin vers la clé SSH privée (~/.ssh/id_rsa)"
   type        = string
   default     = "~/.ssh/id_rsa"
+}
+
+variable "subscription_id" {
+  description = "ID de la subscription Azure (az account show --query id)"
+  type        = string
 }
 

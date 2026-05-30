@@ -27,7 +27,7 @@ provider "azurerm" {
       prevent_deletion_if_contains_resources = false
     }
   }
-  subscription_id = "13603338-551c-4f7a-a3e8-e41445da3872"
+  subscription_id = var.subscription_id
 }
 
 # ─── GROUPE DE RESSOURCES ───────────────────────────────────────

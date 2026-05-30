@@ -2,9 +2,8 @@
 # cp terraform.tfvars.example terraform.tfvars
 
 resource_group_name  = "rg-gestion-produits-docker"
-location             = "francecentral"
-vm_size              = "Standard_B2s"
+location             = "spaincentral"
+vm_size              = "Standard_D2s_v3"
 ssh_public_key_path  = "~/.ssh/id_rsa.pub"
 ssh_private_key_path = "~/.ssh/id_rsa"
-db_password          = "ChangeMe123!"
-docker_image         = "VOTRE_USERNAME/gestion-produits:latest"
+subscription_id      = "VOTRE_SUBSCRIPTION_ID"  # az account show --query id

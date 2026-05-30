@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Stack de production sur Azure : utilise l'image pré-construite depuis Docker Hub
 # Pas de "build:" ici car la VM n'a pas le code source
 
