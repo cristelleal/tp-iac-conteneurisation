@@ -4,26 +4,12 @@ Application PHP de gestion de produits déployée sur Docker et Kubernetes (Micr
 
 ---
 
-## Architecture
+**URLs d'accès :**
+- `https://app.gestion-produits.local` → version prod (MySQL 8.0)
+- `https://dev.gestion-produits.local` → version dev (PostgreSQL 15)
 
-```
-Azure (Azure for Students — région spaincentral)
-│
-├── [docker-infra]  VM docker-host  Standard_B2s (2 vCPU, 4 GB)
-│                   └── Docker + Nginx reverse proxy
-│
-└── [k8s-infra]     VM k8s-master    Standard_D2s_v3  (2 vCPU, 8 GB)  — IP publique
-                    VM k8s-worker-1  Standard_D2as_v4 (2 vCPU, 8 GB)  — IP privée uniquement
-                    VM k8s-worker-2  Standard_D2as_v4 (2 vCPU, 8 GB)  — IP privée uniquement
-                    └── Cluster MicroK8s 1.28 (3 nœuds)
-```
-
-> Les deux déploiements (`docker-infra` et `k8s-infra`) ne peuvent **pas** coexister sur un compte
-> Azure Étudiant — voir la section [Contraintes du compte Azure Étudiant](#contraintes-du-compte-azure-étudiant).
-
-**URLs d'accès (après mise à jour de `/etc/hosts`) :**
-- `http://app.gestion-produits.local` → version prod (MySQL 8.0)
-- `http://dev.gestion-produits.local` → version dev (PostgreSQL 15)
+> Le HTTP (port 80) redirige automatiquement vers HTTPS (port 443).
+> Le certificat TLS est auto-signé: le navigateur affichera un avertissement de sécurité, cliquer sur **"Avancer quand même"** (Chrome) ou **"Accepter le risque"** (Firefox).
 
 ---
 
@@ -37,32 +23,34 @@ Azure (Azure for Students — région spaincentral)
 ├── docker/
 │   ├── Dockerfile                 Image php:8.2-apache + pdo_mysql + pdo_pgsql
 │   ├── entrypoint.sh              Initialisation des images de démo au démarrage
-│   └── nginx/nginx.conf           Reverse proxy Nginx (2 virtual hosts)
-├── docker-compose.yml             Stack locale complète (5 conteneurs)
+│   └── nginx/
+│       ├── nginx.conf             Reverse proxy Nginx (2 virtual hosts HTTPS)
+│       └── certs/                 Certificats TLS auto-signés (générés localement)
+├── docker-compose.yml             Stack complète (Nginx + MySQL + PostgreSQL + 2 PHP)
 ├── .env.example                   Variables d'environnement à copier en .env
 ├── terraform/
-│   ├── docker-infra/              IaC : 1 VM Azure + Docker Compose
+│   ├── docker-infra/              IaC : 1 VM Azure (spaincentral) + Docker Compose
 │   │   ├── main.tf
 │   │   ├── variables.tf
 │   │   ├── outputs.tf
-│   │   ├── docker-compose.prod.yml
 │   │   ├── terraform.tfvars.example
 │   │   └── scripts/setup-docker.sh
-│   └── k8s-infra/                 IaC : 3 VMs Azure + cluster MicroK8s
+│   └── k8s-infra/                 IaC : 3 VMs Azure (spaincentral) + cluster MicroK8s
 │       ├── main.tf
 │       ├── variables.tf
 │       ├── outputs.tf
 │       ├── terraform.tfvars.example
 │       └── scripts/
 │           ├── setup-master.sh    Installe MicroK8s + active dns/ingress/storage
-│           ├── setup-worker.sh    Installe MicroK8s (sans rejoindre le cluster)
-│           └── join-workers.sh    Joint les workers au cluster (tourne sur le Mac)
+│           ├── setup-worker.sh    Installe MicroK8s sur les workers
+│           └── join-workers.sh    Joint les workers au cluster (exécuté en local)
 ├── kubernetes/
 │   ├── prod/                      Manifests K8s namespace prod (MySQL)
 │   └── dev/                       Manifests K8s namespace dev (PostgreSQL)
 └── scripts/
     ├── build-push.sh              Build + push de l'image sur Docker Hub
-    └── deploy-k8s.sh              Déploiement des manifests sur le cluster
+    ├── deploy-k8s.sh              Déploiement des manifests sur le cluster
+    └── generate-certs.sh          Génération des certificats TLS auto-signés
 ```
 
 ---
@@ -82,7 +70,7 @@ ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
 
 ---
 
-## Étape 1 — Test local avec Docker Compose
+## Étape 1: Test local avec Docker Compose
 
 ```bash
 # Variables d'environnement
@@ -96,9 +84,10 @@ echo "127.0.0.1 app.gestion-produits.local" | sudo tee -a /etc/hosts
 echo "127.0.0.1 dev.gestion-produits.local" | sudo tee -a /etc/hosts
 ```
 
-- `http://app.gestion-produits.local` → MySQL
-- `http://dev.gestion-produits.local` → PostgreSQL
+- `https://app.gestion-produits.local` → MySQL (prod)
+- `https://dev.gestion-produits.local` → PostgreSQL (dev)
 - Identifiants : `admin` / `password`
+- Certificat auto-signé: ignorer l'avertissement du navigateur
 
 ```bash
 # Arrêter
@@ -107,7 +96,7 @@ docker compose down
 
 ---
 
-## Étape 2 — Build et push de l'image Docker
+## Étape 2: Build et push de l'image Docker
 
 ```bash
 docker login
@@ -117,23 +106,26 @@ chmod +x scripts/build-push.sh
 ./scripts/build-push.sh VOTRE_USERNAME_DOCKERHUB
 ```
 
-L'image est publiée sur Docker Hub sous `VOTRE_USERNAME/gestion-produits:latest`.
+L'image est publiée sur Docker Hub sous `cristellea/gestion-produits:latest`.
 
 ---
 
-## Étape 3 — Infrastructure Docker sur Azure (Terraform)
+## Étape 3: Infrastructure Docker sur Azure (Terraform)
 
-Crée 1 VM Ubuntu 22.04 sur Azure, installe Docker et lance la stack via `docker compose`.
+> **Important (compte étudiant) :** si le cluster K8s est déjà déployé, le détruire d'abord (`terraform destroy` dans `k8s-infra`): quota de 6 cœurs partagé.
+
+Crée 1 VM Ubuntu 22.04 (`Standard_D2s_v3`) sur Azure en région `spaincentral`, installe Docker et lance la stack via `docker compose`.
 
 ```bash
 cd terraform/docker-infra
 
-# Variables Terraform
+# Variables Terraform (déjà configurées: vérifier les chemins SSH si besoin)
 cp terraform.tfvars.example terraform.tfvars
-# Éditer terraform.tfvars — renseigner docker_hub_username et les chemins SSH
+# Valeurs à renseigner :
+#   ssh_public_key_path  = "~/.ssh/id_rsa.pub"
+#   ssh_private_key_path = "~/.ssh/id_rsa"
 
 terraform init
-terraform plan
 terraform apply
 ```
 
@@ -145,7 +137,7 @@ terraform output hosts_entry
 #   X.X.X.X app.gestion-produits.local
 #   X.X.X.X dev.gestion-produits.local
 
-sudo tee -a /etc/hosts <<< "$(terraform output -raw hosts_entry)"
+terraform output -raw hosts_entry | sudo tee -a /etc/hosts
 ```
 
 ```bash
@@ -155,24 +147,26 @@ terraform destroy
 
 ---
 
-## Étape 4 — Cluster Kubernetes MicroK8s sur Azure (Terraform)
+## Étape 4: Cluster Kubernetes MicroK8s sur Azure (Terraform)
 
 > **Important (compte étudiant) :** détruire l'infra Docker avant de créer le cluster K8s
 > (quota de 6 cœurs partagé entre les deux déploiements).
 
-Crée 3 VMs, installe MicroK8s sur chacune et constitue le cluster automatiquement.
+Crée 3 VMs en `spaincentral` (master `Standard_D2s_v3` + 2 workers `Standard_D2as_v4`), installe MicroK8s sur chacune et constitue le cluster automatiquement.
 
 ```bash
 cd terraform/k8s-infra
 
+# Variables Terraform (déjà configurées: vérifier les chemins SSH si besoin)
 cp terraform.tfvars.example terraform.tfvars
-# Éditer terraform.tfvars — renseigner les chemins SSH
+# Valeurs à renseigner :
+#   ssh_public_key_path  = "~/.ssh/id_rsa.pub"
+#   ssh_private_key_path = "~/.ssh/id_rsa"
 
 # Rendre les scripts exécutables (obligatoire)
 chmod +x scripts/*.sh
 
 terraform init
-terraform plan
 terraform apply
 ```
 
@@ -219,7 +213,7 @@ terraform destroy
 
 ---
 
-## Étape 5 — Déploiement de l'application sur K8s
+## Étape 5: Déploiement de l'application sur K8s
 
 ```bash
 # Depuis la racine du projet, avec KUBECONFIG positionné
@@ -266,7 +260,7 @@ L'application d'origine était uniquement compatible MySQL. Trois fichiers ont �
 | Reverse proxy Docker | Nginx 1.25 Alpine | Léger, virtual hosts simples |
 | IaC | Terraform + provider AzureRM 4.x | Standard industrie, déclaratif |
 | Cloud | Azure for Students | 100 $ de crédits, sans CB |
-| VM docker-infra | Standard_B2s (2 vCPU, 4 GB) | Suffisant pour Docker Compose |
+| VM docker-infra | Standard_D2s_v3 (2 vCPU, 8 GB) | SKU disponible en spaincentral sur compte étudiant |
 | VM k8s master | Standard_D2s_v3 (2 vCPU, 8 GB) | Dans le quota `standardDSv3Family` |
 | VM k8s workers | Standard_D2as_v4 (2 vCPU, 8 GB) | Famille différente pour répartir le quota par famille |
 | Distribution K8s | MicroK8s 1.28 (Canonical) | Installation en une commande via snap, add-ons intégrés |
@@ -292,7 +286,7 @@ L'application d'origine était uniquement compatible MySQL. Trois fichiers ont �
 
 ### Adaptations retenues
 
-- **Une seule IP publique** sur le master — les workers sont en IP privée uniquement, accessibles en SSH via le master comme bastion (jump host).
+- **Une seule IP publique** sur le master: les workers sont en IP privée uniquement, accessibles en SSH via le master comme bastion (jump host).
 - **Deux familles de VM différentes** : master en `Standard_D2s_v3` (famille DSv3, 2 cœurs) et workers en `Standard_D2as_v4` (famille DASv4, 2 cœurs chacun). Cela répartit la consommation sur deux quotas de famille (2 + 4 = quotas distincts) tout en restant dans le quota total de 6 cœurs.
 - **Déploiements mutuellement exclusifs** : détruire `docker-infra` avant de déployer `k8s-infra`.
 

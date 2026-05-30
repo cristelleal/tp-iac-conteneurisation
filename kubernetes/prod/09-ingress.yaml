@@ -5,7 +5,12 @@ metadata:
   namespace: prod
   annotations:
     kubernetes.io/ingress.class: "public"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
+  tls:
+    - hosts:
+        - app.gestion-produits.local
+      secretName: tls-secret
   rules:
     - host: app.gestion-produits.local
       http:

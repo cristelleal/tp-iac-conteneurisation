@@ -1,4 +1,4 @@
-# Architecture — TP IaC Conteneurisation
+# Architecture ≡ TP IaC Conteneurisation
 
 ## Vue d'ensemble
 
@@ -7,8 +7,8 @@ Ce projet déploie une application PHP de gestion de produits sur trois environn
 | Environnement | Infrastructure | Déclenchement |
 |---|---|---|
 | **Local** | Docker Compose sur le poste de développement | `docker compose up` |
-| **Cloud — Docker** | 1 VM Azure + Docker Compose | `terraform apply` (docker-infra) |
-| **Cloud — Kubernetes** | 3 VMs Azure + cluster MicroK8s 3 nœuds | `terraform apply` (k8s-infra) |
+| **Cloud: Docker** | 1 VM Azure + Docker Compose | `terraform apply` (docker-infra) |
+| **Cloud: Kubernetes** | 3 VMs Azure + cluster MicroK8s 3 nœuds | `terraform apply` (k8s-infra) |
 
 ---
 
@@ -51,7 +51,7 @@ php:8.2-apache
 
 L'image est construite pour `linux/amd64` (nécessaire sur Mac Apple Silicon pour garantir la compatibilité avec les VMs Azure x86).
 
-### Stack locale — Docker Compose
+### Stack locale: Docker Compose
 
 5 conteneurs sur le poste de développement :
 
@@ -88,14 +88,14 @@ Sur Azure, une VM ne peut pas exister de façon autonome. Elle a besoin d'un ens
 
 ```
 Azure
-└── Resource Group  (1)  — conteneur logique obligatoire
-    ├── Virtual Network  (2)  — réseau privé 10.0.0.0/16
-    │   └── Subnet  (3)  — sous-réseau 10.0.1.0/24
-    ├── Network Security Group  (4)  — pare-feu : ports 22, 80, 443
-    ├── Public IP  (5)  — adresse IP publique fixe (Static)
-    ├── Network Interface  (6)  — carte réseau virtuelle
-    ├── NIC ↔ NSG Association  (7)  — branche le pare-feu sur la NIC
-    └── Linux Virtual Machine  (8)  — Ubuntu 22.04, Standard_B2s
+└── Resource Group  (1) : conteneur logique obligatoire
+    ├── Virtual Network  (2) : réseau privé 10.0.0.0/16
+    │   └── Subnet  (3) : sous-réseau 10.0.1.0/24
+    ├── Network Security Group  (4) : pare-feu : ports 22, 80, 443
+    ├── Public IP  (5) : adresse IP publique fixe (Static)
+    ├── Network Interface  (6) : carte réseau virtuelle
+    ├── NIC ↔ NSG Association  (7) : branche le pare-feu sur la NIC
+    └── Linux Virtual Machine  (8)  Ubuntu 22.04, Standard_D2s_v3
 ```
 
 ### Rôle de chaque ressource Terraform
@@ -106,12 +106,12 @@ Azure
 | 2 | `azurerm_virtual_network` | Réseau privé isolé. Plage `10.0.0.0/16` (65 534 adresses). |
 | 3 | `azurerm_subnet` | Découpe du VNet. Ici un seul sous-réseau : `10.0.1.0/24`. |
 | 4 | `azurerm_network_security_group` | Pare-feu inbound : autorise SSH (22), HTTP (80), HTTPS (443). Tout le reste est bloqué. |
-| 5 | `azurerm_public_ip` | IP publique statique — ne change pas au redémarrage de la VM. |
+| 5 | `azurerm_public_ip` | IP publique statique: ne change pas au redémarrage de la VM. |
 | 6 | `azurerm_network_interface` | Relie la VM au subnet et à l'IP publique. |
 | 7 | `azurerm_network_interface_security_group_association` | Sans cette ressource, le NSG est créé mais n'est pas appliqué à la NIC. |
-| 8 | `azurerm_linux_virtual_machine` | VM Ubuntu 22.04 LTS, Standard_B2s (2 vCPU, 4 GB RAM). |
+| 8 | `azurerm_linux_virtual_machine` | VM Ubuntu 22.04 LTS, Standard_D2s_v3 (2 vCPU, 8 GB RAM). |
 
-### Flux de déploiement Terraform — infra Docker
+### Flux de déploiement Terraform: infra Docker
 
 ```
 terraform apply
@@ -123,7 +123,7 @@ terraform apply
     │       docker/nginx/nginx.conf  →  /home/azureuser/nginx/
     │       database/*.sql           →  /home/azureuser/database/
     │
-    └── 3. Provisioner "remote-exec" — scripts/setup-docker.sh :
+    └── 3. Provisioner "remote-exec": scripts/setup-docker.sh :
             apt install docker-ce docker-compose-plugin
             docker compose pull    ← tire l'image depuis Docker Hub
             docker compose up -d   ← lance nginx + mysql + postgres + php×2
@@ -171,7 +171,7 @@ Azure
     │   ├── Règle MicroK8s-API port 16443 (VNet interne uniquement)
     │   ├── Règle MicroK8s-Cluster port 25000 (VNet interne uniquement)
     │   └── Règle Internal     tout port (VNet interne uniquement)
-    ├── Public IP  (master uniquement — les workers n'ont pas d'IP publique)
+    ├── Public IP  (master uniquement: les workers n'ont pas d'IP publique)
     ├── NIC master  (IP publique + IP privée)
     ├── NIC worker-1  (IP privée uniquement)
     ├── NIC worker-2  (IP privée uniquement)
@@ -182,7 +182,7 @@ Azure
     └── null_resource join_workers
 ```
 
-### Flux de déploiement Terraform — infra K8s
+### Flux de déploiement Terraform: infra K8s
 
 ```
 terraform apply
@@ -196,7 +196,7 @@ terraform apply
     │       microk8s enable dns ingress storage
     │
     ├── 3. remote-exec sur worker-1 et worker-2  →  setup-worker.sh :
-    │       (connexion SSH via le master comme bastion — les workers n'ont pas d'IP publique)
+    │       (connexion SSH via le master comme bastion: les workers n'ont pas d'IP publique)
     │       snap install microk8s --classic --channel=1.28/stable
     │       microk8s status --wait-ready
     │       (le worker est prêt mais pas encore joint au cluster)
@@ -227,13 +227,13 @@ ssh_worker() {
 Cluster MicroK8s
 │
 ├── namespace: prod
-│   ├── Secret           db-secret           — credentials base de données (base64)
-│   ├── PVC              mysql-pvc (5 Gi)    — données MySQL persistantes
-│   ├── PVC              uploads-pvc (2 Gi)  — images produits persistantes
-│   ├── ConfigMap        mysql-configmap     — script SQL d'initialisation
-│   ├── Deployment       mysql               — MySQL 8.0
-│   ├── Service          db (ClusterIP)      — accès interne à MySQL
-│   ├── Deployment       php-app             — PHP prod (DB_TYPE=mysql)
+│   ├── Secret           db-secret          : credentials base de données (base64)
+│   ├── PVC              mysql-pvc (5 Gi)   : données MySQL persistantes
+│   ├── PVC              uploads-pvc (2 Gi) : images produits persistantes
+│   ├── ConfigMap        mysql-configmap    : script SQL d'initialisation
+│   ├── Deployment       mysql              : MySQL 8.0
+│   ├── Service          db (ClusterIP)     : accès interne à MySQL
+│   ├── Deployment       php-app            : PHP prod (DB_TYPE=mysql)
 │   ├── Service          php-service (ClusterIP)
 │   └── Ingress          → app.gestion-produits.local
 │
@@ -242,9 +242,9 @@ Cluster MicroK8s
     ├── PVC              postgres-pvc (5 Gi)
     ├── PVC              uploads-pvc (2 Gi)
     ├── ConfigMap        postgres-configmap
-    ├── Deployment       postgres            — PostgreSQL 15
+    ├── Deployment       postgres           : PostgreSQL 15
     ├── Service          db (ClusterIP)
-    ├── Deployment       php-app             — PHP dev (DB_TYPE=pgsql)
+    ├── Deployment       php-app            : PHP dev (DB_TYPE=pgsql)
     ├── Service          php-service (ClusterIP)
     └── Ingress          → dev.gestion-produits.local
 ```
@@ -253,7 +253,7 @@ Cluster MicroK8s
 
 | Objet | Rôle |
 |-------|------|
-| **Namespace** | Isolation logique — les ressources prod et dev ne se voient pas, sauf via les Services exposés. |
+| **Namespace** | Isolation logique: les ressources prod et dev ne se voient pas, sauf via les Services exposés. |
 | **Secret** | Stocke les credentials encodés en base64. Monté en variables d'environnement dans les pods. |
 | **PVC** (PersistentVolumeClaim) | Demande de stockage persistant. Les données survivent au redémarrage ou remplacement d'un pod. Satisfait par le `storage` add-on de MicroK8s (hostpath). |
 | **ConfigMap** | Fichier de configuration injecté dans les conteneurs. Ici : script SQL exécuté à l'initialisation de la base. |
@@ -292,8 +292,8 @@ Les ports MicroK8s (16443, 25000) et le trafic interne ne sont accessibles que d
 
 | URL | Environnement | Base de données | Infrastructure |
 |-----|---------------|-----------------|----------------|
-| `http://app.gestion-produits.local` | prod | MySQL 8.0 | Docker Compose local, docker-infra, k8s-infra |
-| `http://dev.gestion-produits.local` | dev | PostgreSQL 15 | Docker Compose local, docker-infra, k8s-infra |
+| `https://app.gestion-produits.local` | prod | MySQL 8.0 | Docker Compose local, docker-infra, k8s-infra |
+| `https://dev.gestion-produits.local` | dev | PostgreSQL 15 | Docker Compose local, docker-infra, k8s-infra |
 
 Identifiants par défaut : `admin` / `password`
 

@@ -22,7 +22,11 @@ terraform {
 
 # Le provider Azure lit les credentials depuis "az login"
 provider "azurerm" {
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
   subscription_id = "13603338-551c-4f7a-a3e8-e41445da3872"
 }
 

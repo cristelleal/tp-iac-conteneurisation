@@ -12,5 +12,8 @@ terraform.tfvars
 # Fichiers de backup créés par sed
 *.bak
 
+# Certificats TLS (générés localement, ne pas committer les clés privées)
+docker/nginx/certs/
+
 # macOS
 .DS_Store

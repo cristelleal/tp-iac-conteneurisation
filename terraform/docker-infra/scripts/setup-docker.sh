@@ -22,13 +22,20 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plu
 sudo usermod -aG docker azureuser
 
 echo "=== Préparation des fichiers de l'application ==="
-mkdir -p /home/azureuser/app/docker/nginx
+mkdir -p /home/azureuser/app/docker/nginx/certs
 mkdir -p /home/azureuser/app/database
 
 # Les fichiers ont été copiés par le provisioner "file" de Terraform
 cp /home/azureuser/docker-compose.yml /home/azureuser/app/
 cp -r /home/azureuser/nginx/* /home/azureuser/app/docker/nginx/
 cp -r /home/azureuser/database/* /home/azureuser/app/database/
+
+echo "=== Génération du certificat TLS auto-signé ==="
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout /home/azureuser/app/docker/nginx/certs/gestion-produits.key \
+  -out    /home/azureuser/app/docker/nginx/certs/gestion-produits.crt \
+  -subj "/CN=gestion-produits.local" \
+  -addext "subjectAltName=DNS:app.gestion-produits.local,DNS:dev.gestion-produits.local"
 
 echo "=== Lancement de l'application (pull depuis Docker Hub) ==="
 cd /home/azureuser/app
