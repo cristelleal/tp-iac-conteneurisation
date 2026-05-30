@@ -157,7 +157,7 @@ Internet
 
 Les quotas Azure Étudiant s'appliquent par famille de VM. Utiliser deux familles (`standardDSv3` pour le master, `standardDASv4` pour les workers) répartit la consommation sur deux enveloppes distinctes, tout en restant sous le quota total de 6 cœurs.
 
-### Ressources Terraform du cluster (14 au total)
+### Ressources Terraform du cluster (15 au total)
 
 ```
 Azure
@@ -305,7 +305,7 @@ Identifiants par défaut : `admin` / `password`
 
 | Output | Valeur |
 |--------|--------|
-| `public_ip` | IP publique de la VM Docker |
+| `docker_host_ip` | IP publique de la VM Docker |
 | `hosts_entry` | Lignes prêtes à coller dans `/etc/hosts` |
 | `ssh_command` | Commande SSH pour se connecter à la VM |
 

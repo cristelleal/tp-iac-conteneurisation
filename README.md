@@ -4,12 +4,12 @@ Application PHP de gestion de produits déployée sur Docker et Kubernetes (Micr
 
 ---
 
-**URLs d'accès :**
+**URLs d'accès** (identiques sur Docker local et K8s Azure) **:**
 - `https://app.gestion-produits.local` → version prod (MySQL 8.0)
 - `https://dev.gestion-produits.local` → version dev (PostgreSQL 15)
 
 > Le HTTP (port 80) redirige automatiquement vers HTTPS (port 443).
-> Le certificat TLS est auto-signé: le navigateur affichera un avertissement de sécurité, cliquer sur **"Avancer quand même"** (Chrome) ou **"Accepter le risque"** (Firefox).
+> Le certificat TLS est auto-signé : le navigateur affichera un avertissement de sécurité, cliquer sur **"Avancer quand même"** (Chrome) ou **"Accepter le risque"** (Firefox).
 
 ---
 
@@ -129,6 +129,8 @@ terraform init
 terraform apply
 ```
 
+![Terraform apply docker-infra — conteneurs Docker démarrés sur Azure](img/docker-infra-terraform-apply.png)
+
 Récupérer l'IP publique et mettre à jour `/etc/hosts` :
 
 ```bash
@@ -170,8 +172,10 @@ terraform init
 terraform apply
 ```
 
+![Terraform apply k8s-infra — cluster 3 nœuds constitué](img/k8s-infra-terraform-apply.png)
+
 Terraform effectue dans l'ordre :
-1. Création des 12 ressources Azure (réseau, VMs…)
+1. Création des 15 ressources Azure (réseau, VMs…)
 2. Installation de MicroK8s sur le master (`setup-master.sh` en remote-exec)
 3. Installation de MicroK8s sur les workers (`setup-worker.sh` en remote-exec via le master en bastion)
 4. Jonction des workers au cluster (`join-workers.sh` en local-exec depuis le Mac)
@@ -198,6 +202,8 @@ k8s-worker-1   Ready    <none>   3m    v1.28.15
 k8s-worker-2   Ready    <none>   3m    v1.28.15
 ```
 
+![Ressources Azure — 15 ressources du cluster K8s dans le portail Azure](img/azure-ressources-dashboard-screenshot.png)
+
 Accès SSH aux workers (via le master comme jump host) :
 
 ```bash
@@ -215,6 +221,12 @@ terraform destroy
 
 ## Étape 5: Déploiement de l'application sur K8s
 
+Le script `deploy-k8s.sh` effectue dans l'ordre :
+1. Génération d'un certificat TLS auto-signé (SAN pour les deux domaines)
+2. Déploiement du namespace **prod** : MySQL + PHP + Ingress HTTPS
+3. Déploiement du namespace **dev** : PostgreSQL + PHP + Ingress HTTPS
+4. Attente que les pods soient `Running`
+
 ```bash
 # Depuis la racine du projet, avec KUBECONFIG positionné
 export KUBECONFIG=~/.kube/config-azure
@@ -227,6 +239,8 @@ Mettre à jour `/etc/hosts` avec l'IP du master :
 
 ```bash
 MASTER_IP=$(cd terraform/k8s-infra && terraform output -raw master_ip)
+# Supprimer les entrées existantes pour éviter les doublons, puis ajouter
+sudo sed -i '' '/gestion-produits.local/d' /etc/hosts
 echo "$MASTER_IP app.gestion-produits.local" | sudo tee -a /etc/hosts
 echo "$MASTER_IP dev.gestion-produits.local" | sudo tee -a /etc/hosts
 ```
@@ -237,6 +251,19 @@ Vérifier l'état du déploiement :
 kubectl get pods,svc,ingress -n prod
 kubectl get pods,svc,ingress -n dev
 ```
+
+Accéder à l'application (certificat auto-signé — ignorer l'avertissement du navigateur) :
+
+| URL | Environnement | Base de données |
+|-----|--------------|-----------------|
+| `https://app.gestion-produits.local` | Production | MySQL 8.0 |
+| `https://dev.gestion-produits.local` | Développement | PostgreSQL 15 |
+
+Identifiants : `admin` / `password`
+
+![Application prod — https://app.gestion-produits.local (MySQL)](img/app-gestion-produits-https.png)
+
+![Application dev — https://dev.gestion-produits.local (PostgreSQL)](img/dev-gestion-produits-https.png)
 
 ---
 
