@@ -152,7 +152,8 @@ resource "azurerm_network_interface" "k8s_master_nic" {
   ip_configuration {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.k8s_subnet.id
-    private_ip_address_allocation = "Dynamic"
+    private_ip_address_allocation = "Static"
+    private_ip_address            = "10.1.1.10"
     public_ip_address_id          = azurerm_public_ip.k8s_master_pip.id
   }
 }

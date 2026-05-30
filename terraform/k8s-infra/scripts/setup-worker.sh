@@ -7,6 +7,10 @@ set -e
 echo "=== Attente de snapd ==="
 sudo snap wait system seed.loaded
 
+echo "=== Installation des dépendances ==="
+sudo apt-get update -y
+sudo apt-get install -y nfs-common
+
 echo "=== Installation de MicroK8s ==="
 sudo snap install microk8s --classic --channel=1.28/stable
 

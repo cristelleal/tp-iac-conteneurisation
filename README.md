@@ -41,10 +41,11 @@ Application PHP de gestion de produits déployée sur Docker et Kubernetes (Micr
 │       ├── outputs.tf
 │       ├── terraform.tfvars.example
 │       └── scripts/
-│           ├── setup-master.sh    Installe MicroK8s + active dns/ingress/storage
-│           ├── setup-worker.sh    Installe MicroK8s sur les workers
+│           ├── setup-master.sh    Installe MicroK8s + serveur NFS + active dns/ingress
+│           ├── setup-worker.sh    Installe MicroK8s + nfs-common sur les workers
 │           └── join-workers.sh    Joint les workers au cluster (exécuté en local)
 ├── kubernetes/
+│   ├── common/                    PersistentVolumes NFS partagés (4 volumes)
 │   ├── prod/                      Manifests K8s namespace prod (MySQL)
 │   └── dev/                       Manifests K8s namespace dev (PostgreSQL)
 └── scripts/
@@ -223,9 +224,10 @@ terraform destroy
 
 Le script `deploy-k8s.sh` effectue dans l'ordre :
 1. Génération d'un certificat TLS auto-signé (SAN pour les deux domaines)
-2. Déploiement du namespace **prod** : MySQL + PHP + Ingress HTTPS
-3. Déploiement du namespace **dev** : PostgreSQL + PHP + Ingress HTTPS
-4. Attente que les pods soient `Running`
+2. Déploiement des **PersistentVolumes NFS** partagés (`kubernetes/common/`)
+3. Déploiement du namespace **prod** : MySQL + PHP + Ingress HTTPS
+4. Déploiement du namespace **dev** : PostgreSQL + PHP + Ingress HTTPS
+5. Attente que les pods soient `Running`
 
 ```bash
 # Depuis la racine du projet, avec KUBECONFIG positionné
@@ -291,7 +293,7 @@ L'application d'origine était uniquement compatible MySQL. Trois fichiers ont �
 | VM k8s master | Standard_D2s_v3 (2 vCPU, 8 GB) | Dans le quota `standardDSv3Family` |
 | VM k8s workers | Standard_D2as_v4 (2 vCPU, 8 GB) | Famille différente pour répartir le quota par famille |
 | Distribution K8s | MicroK8s 1.28 (Canonical) | Installation en une commande via snap, add-ons intégrés |
-| Stockage K8s | MicroK8s `storage` add-on | Zéro configuration pour une démo |
+| Stockage K8s | Serveur NFS sur le master (nfs-kernel-server) | `ReadWriteMany` requis pour les PVCs multi-nœuds ; l'add-on `storage` (hostpath) ne supporte que `ReadWriteOnce` |
 | Ingress K8s | MicroK8s `ingress` add-on (Nginx) | Intégré, activé en une commande |
 
 ---

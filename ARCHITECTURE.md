@@ -141,9 +141,10 @@ Internet
     ▼
 ┌─────────────────────────────────────────────┐
 │  k8s-master  Standard_D2s_v3 (2 vCPU, 8 GB)│
-│  IP publique unique du cluster              │
-│  MicroK8s : dns + ingress + storage         │
+│  IP publique unique / IP privée 10.1.1.10   │
+│  MicroK8s : dns + ingress                   │
 │  Nginx Ingress Controller                   │
+│  Serveur NFS : /srv/nfs/k8s/                │
 └──────────────┬─────────────────┬────────────┘
                │ VNet 10.1.1.0/24│ (IP privées seulement)
       ┌────────▼──────┐  ┌───────▼──────────┐
@@ -193,10 +194,14 @@ terraform apply
     │       snap wait system seed.loaded   ← attend que snapd soit prêt
     │       snap install microk8s --classic --channel=1.28/stable
     │       microk8s status --wait-ready
-    │       microk8s enable dns ingress storage
+    │       apt install nfs-kernel-server  ← serveur NFS pour les PVCs
+    │       mkdir -p /srv/nfs/k8s/{mysql,postgres,uploads-prod,uploads-dev}
+    │       exportfs -a                    ← export NFS vers 10.1.0.0/16
+    │       microk8s enable dns ingress    ← storage add-on remplacé par NFS
     │
     ├── 3. remote-exec sur worker-1 et worker-2  →  setup-worker.sh :
     │       (connexion SSH via le master comme bastion: les workers n'ont pas d'IP publique)
+    │       apt install nfs-common         ← client NFS pour monter les volumes
     │       snap install microk8s --classic --channel=1.28/stable
     │       microk8s status --wait-ready
     │       (le worker est prêt mais pas encore joint au cluster)
@@ -226,10 +231,16 @@ ssh_worker() {
 ```
 Cluster MicroK8s
 │
+├── (cluster-wide)
+│   ├── PV  nfs-mysql         (5 Gi, NFS → 10.1.1.10:/srv/nfs/k8s/mysql)
+│   ├── PV  nfs-postgres      (5 Gi, NFS → 10.1.1.10:/srv/nfs/k8s/postgres)
+│   ├── PV  nfs-uploads-prod  (2 Gi, NFS → 10.1.1.10:/srv/nfs/k8s/uploads-prod)
+│   └── PV  nfs-uploads-dev   (2 Gi, NFS → 10.1.1.10:/srv/nfs/k8s/uploads-dev)
+│
 ├── namespace: prod
 │   ├── Secret           db-secret          : credentials base de données (base64)
-│   ├── PVC              mysql-pvc (5 Gi)   : données MySQL persistantes
-│   ├── PVC              uploads-pvc (2 Gi) : images produits persistantes
+│   ├── PVC              mysql-pvc (5 Gi, ReadWriteMany, storageClass: nfs)
+│   ├── PVC              uploads-pvc (2 Gi, ReadWriteMany, storageClass: nfs)
 │   ├── ConfigMap        mysql-configmap    : script SQL d'initialisation
 │   ├── Deployment       mysql              : MySQL 8.0
 │   ├── Service          db (ClusterIP)     : accès interne à MySQL
@@ -239,8 +250,8 @@ Cluster MicroK8s
 │
 └── namespace: dev
     ├── Secret           db-secret
-    ├── PVC              postgres-pvc (5 Gi)
-    ├── PVC              uploads-pvc (2 Gi)
+    ├── PVC              postgres-pvc (5 Gi, ReadWriteMany, storageClass: nfs)
+    ├── PVC              uploads-pvc (2 Gi, ReadWriteMany, storageClass: nfs)
     ├── ConfigMap        postgres-configmap
     ├── Deployment       postgres           : PostgreSQL 15
     ├── Service          db (ClusterIP)
@@ -255,7 +266,8 @@ Cluster MicroK8s
 |-------|------|
 | **Namespace** | Isolation logique: les ressources prod et dev ne se voient pas, sauf via les Services exposés. |
 | **Secret** | Stocke les credentials encodés en base64. Monté en variables d'environnement dans les pods. |
-| **PVC** (PersistentVolumeClaim) | Demande de stockage persistant. Les données survivent au redémarrage ou remplacement d'un pod. Satisfait par le `storage` add-on de MicroK8s (hostpath). |
+| **PV** (PersistentVolume) | Volume NFS déclaré au niveau cluster, pointant vers un export du master (`10.1.1.10`). |
+| **PVC** (PersistentVolumeClaim) | Demande de stockage persistant. Les données survivent au redémarrage ou remplacement d'un pod. Satisfait par les PVs NFS (`ReadWriteMany`, accessible depuis tous les nœuds). |
 | **ConfigMap** | Fichier de configuration injecté dans les conteneurs. Ici : script SQL exécuté à l'initialisation de la base. |
 | **Deployment** | Déclare un ou plusieurs pods à maintenir en vie, avec leur image, variables d'environnement et volumes. |
 | **Service ClusterIP** | Point d'accès réseau stable et interne au cluster vers un Deployment. L'adresse IP du pod peut changer ; le Service, non. |

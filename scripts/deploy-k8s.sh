@@ -12,6 +12,9 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -subj "/CN=gestion-produits.local" \
   -addext "subjectAltName=DNS:app.gestion-produits.local,DNS:dev.gestion-produits.local"
 
+echo "=== Déploiement des volumes NFS partagés ==="
+kubectl apply -f kubernetes/common/
+
 echo "=== Déploiement namespace PROD (MySQL) ==="
 kubectl apply -f kubernetes/prod/
 kubectl create secret tls tls-secret -n prod \
